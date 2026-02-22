@@ -71,7 +71,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: test-results
-
       - name: Call OpenAI API
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -79,18 +78,66 @@ jobs:
           COMMITS=$(git log --oneline -3 --pretty=format:"%h %s")
           TEST_OUTPUT=$(cat test-results.txt 2>/dev/null || echo "No test output")
 
-          curl -s https://api.openai.com/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $OPENAI_API_KEY" \
-            -d "{
-              \"model\": \"gpt-3.5-turbo\",
-              \"messages\": [{
-                \"role\": \"user\",
-                \"content\": \"Analyze this CI/CD build and generate summary, release notes and risk flags.\n\nCommit: ${{ github.sha }}\nBranch: ${{ github.ref_name }}\nAuthor: ${{ github.actor }}\n\nRecent commits:\n$COMMITS\n\nTest Results:\n$TEST_OUTPUT\"
-              }],
-              \"max_tokens\": 500
-            }" > raw_response.json
+          python3 << 'EOF'
+          import json
+          import urllib.request
+          import os
 
+          api_key = os.environ['OPENAI_API_KEY']
+          commits = os.popen('git log --oneline -3 --pretty=format:"%h %s"').read()
+          
+          with open('test-results.txt', 'r') as f:
+              test_output = f.read()
+
+          prompt = f"""Analyze this CI/CD build and generate:
+          1. A concise build summary
+          2. Release notes
+          3. Risk flags
+
+          Branch: {os.environ.get('GITHUB_REF_NAME', 'unknown')}
+          Author: {os.environ.get('GITHUB_ACTOR', 'unknown')}
+
+          Recent commits:
+          {commits}
+
+          Test Results:
+          {test_output}
+          """
+
+          payload = {
+              "model": "gpt-3.5-turbo",
+              "messages": [
+                  {
+                      "role": "user",
+                      "content": prompt
+                  }
+              ],
+              "max_tokens": 500
+          }
+
+          data = json.dumps(payload).encode('utf-8')
+
+          req = urllib.request.Request(
+              'https://api.openai.com/v1/chat/completions',
+              data=data,
+              headers={
+                  'Content-Type': 'application/json',
+                  'Authorization': f'Bearer {api_key}'
+              }
+          )
+
+          try:
+              with urllib.request.urlopen(req) as response:
+                  result = json.loads(response.read().decode('utf-8'))
+                  with open('raw_response.json', 'w') as f:
+                      json.dump(result, f, indent=2)
+          except urllib.error.HTTPError as e:
+              error_body = json.loads(e.read().decode('utf-8'))
+              with open('raw_response.json', 'w') as f:
+                  json.dump(error_body, f, indent=2)
+
+          print('Done! Response saved to raw_response.json')
+          EOF
           cat raw_response.json
 
       - name: Parse AI Response
