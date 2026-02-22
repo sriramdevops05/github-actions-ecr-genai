@@ -17,7 +17,7 @@ if __name__ == '__main__':
 
 **Step 6** → Scroll down → Click **"Commit changes"**
 
-**Step 7** → Click **"Commit changes"** again to confirm ✅
+**Step 7** → Click **"Commit changes"** again to confirm
 
 ---
 
