@@ -8,5 +8,3 @@ Automated CI/CD pipeline using GitHub Actions to build, test &amp; deploy Docker
 ## Pipeline Stages
 ## GenAI Integration
 ## How to Run
-#Lets test the pipeline
-#test the changes
