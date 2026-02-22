@@ -76,11 +76,9 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          # Get recent commit messages for release notes
-          COMMITS=$(git log --oneline -10 --pretty=format:"%h %s")
+          COMMITS=$(git log --oneline -3 --pretty=format:"%h %s")
           TEST_OUTPUT=$(cat test-results.txt 2>/dev/null || echo "No test output")
           
-          # Call OpenAI API for build summary
           AI_RESPONSE=$(curl -s https://api.openai.com/v1/chat/completions \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $OPENAI_API_KEY" \
@@ -88,28 +86,32 @@ jobs:
               \"model\": \"gpt-3.5-turbo\",
               \"messages\": [{
                 \"role\": \"user\",
-                \"content\": \"You are a DevOps AI assistant. Analyze this CI/CD build:\n\nCommit: ${{ github.sha }}\nBranch: ${{ github.ref_name }}\nAuthor: ${{ github.actor }}\n\nRecent commits:\n$COMMITS\n\nTest Results:\n$TEST_OUTPUT\n\nGenerate:\n1. A concise build summary (2-3 sentences)\n2. Key changes as release notes\n3. Any risks or recommendations\nFormat as markdown.\"
+                \"content\": \"Analyze this CI/CD build and generate summary, release notes and risk flags.\n\nCommit: ${{ github.sha }}\nBranch: ${{ github.ref_name }}\nAuthor: ${{ github.actor }}\n\nRecent commits:\n$COMMITS\n\nTest Results:\n$TEST_OUTPUT\"
               }],
               \"max_tokens\": 500
             }")
-          
-          # Extract and save AI response
+
           echo "$AI_RESPONSE" | python3 -c "
-          import json, sys
-          data = json.load(sys.stdin)
-          content = data['choices'][0]['message']['content']
-          print(content)
-          " > ai-summary.md
-          
-          echo "=== AI GENERATED SUMMARY ===" 
-          cat ai-summary.md
+import json, sys
+data = json.load(sys.stdin)
+print('Full API Response:', json.dumps(data, indent=2))
+if 'choices' in data:
+    content = data['choices'][0]['message']['content']
+    print(content)
+    with open('ai-summary.md', 'w') as f:
+        f.write(content)
+elif 'error' in data:
+    print('OpenAI Error:', data['error']['message'])
+    with open('ai-summary.md', 'w') as f:
+        f.write('AI analysis unavailable: ' + data['error']['message'])
+"
 
       - name: Upload AI Summary
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ai-build-summary
           path: ai-summary.md
-
   # ─────────────────────────────────────────
   # JOB 3: PUSH TO AWS ECR
   # ─────────────────────────────────────────
